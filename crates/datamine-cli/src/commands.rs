@@ -128,6 +128,7 @@ pub fn run(cli: Cli) -> Result<()> {
             category,
             job,
             data_only,
+            hide_text,
             format,
             out,
             limit,
@@ -142,8 +143,13 @@ pub fn run(cli: Cli) -> Result<()> {
             for j in &job {
                 facets.add_job(j).map_err(anyhow::Error::msg)?;
             }
-            let from = store.resolve(&from)?;
             let to = store.resolve(&to)?;
+            let from = match &from {
+                Some(sel) => store.resolve(sel)?,
+                None => store.diff_base(&to)?.with_context(|| {
+                    format!("nothing to compare: {} is the oldest version", to.label)
+                })?,
+            };
             if from.id == to.id {
                 bail!(
                     "--from and --to are both {}; import another version first",
@@ -155,6 +161,9 @@ pub fn run(cli: Cli) -> Result<()> {
             };
             let mut cs = diff::changeset(&store, &from, &to, &filter)?;
             cs.retain(&facets);
+            if hide_text {
+                cs.hide_text_only();
+            }
             let text = match format {
                 Format::Text => render::changeset_text(&cs, limit),
                 Format::Markdown => render::changeset_markdown(&cs, limit),

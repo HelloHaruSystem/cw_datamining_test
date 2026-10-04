@@ -496,6 +496,10 @@ table.fields td { overflow-wrap: anywhere; white-space: pre-wrap; }
 del { color: var(--removed); background: var(--removed-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 50%, transparent); border-radius: 4px; padding: 0 3px; }
 ins { color: var(--added); background: var(--added-soft); text-decoration: none; border-radius: 4px; padding: 0 3px; }
 
+tr.group-detail > td { padding-top: 0; }
+tr.group-detail summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+tr.group-detail table.fields { margin-top: 6px; }
+
 ol.timeline { list-style: none; margin: 12px 0 0; padding: 0 0 0 18px; border-left: 2px solid var(--border); }
 ol.timeline li { position: relative; padding: 0 0 16px 10px; }
 ol.timeline li::before {

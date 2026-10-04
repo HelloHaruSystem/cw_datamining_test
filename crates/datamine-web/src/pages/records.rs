@@ -18,7 +18,8 @@ use crate::state::AppState;
 use crate::views::{self, Nav, badge, encode_path, encode_query, icon};
 
 const SEARCH_LIMIT: usize = 200;
-const DIFF_LIMIT_PER_CATEGORY: usize = 300;
+/// Changes listed per category before a "show all" link.
+const DIFF_LIMIT_PER_CATEGORY: usize = 100;
 
 // ---- diff -----------------------------------------------------------------
 
@@ -38,6 +39,12 @@ pub struct DiffQuery {
     /// "1" to include raw file/.img changes.
     #[serde(default)]
     raw: String,
+    /// "hide" to hide text-only changes.
+    #[serde(default)]
+    text: String,
+    /// Category slug whose changes are all listed (no per-category limit).
+    #[serde(default)]
+    all: String,
 }
 
 impl DiffQuery {
@@ -59,6 +66,7 @@ impl DiffQuery {
             "cat" => &mut q.cat,
             "job" => &mut q.job,
             "change" => &mut q.change,
+            "text" => &mut q.text,
             _ => &mut q.raw,
         };
         let mut items: Vec<String> = Self::list(target).into_iter().map(str::to_owned).collect();
@@ -80,6 +88,8 @@ impl DiffQuery {
             ("job", &self.job),
             ("change", &self.change),
             ("raw", &self.raw),
+            ("text", &self.text),
+            ("all", &self.all),
         ] {
             if !v.is_empty() {
                 parts.push(format!("{k}={}", encode_query(v)));
@@ -108,10 +118,12 @@ pub async fn diff(
             let to = site.version.clone();
             let from = match q.from.as_deref().filter(|s| !s.is_empty()) {
                 Some(sel) => ctx.version(sel)?,
-                None => match site.versions.iter().take_while(|v| v.id != to.id).last() {
-                    Some(prev) => prev.clone(),
-                    None => ctx.store.resolve("baseline")?,
-                },
+                None => ctx.store.previous(&to)?.ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "{} is the oldest version; pick another one.",
+                        to.label
+                    ))
+                })?,
             };
             if from.id == to.id {
                 return Err(AppError::BadRequest("Pick two different versions.".into()));
@@ -164,7 +176,10 @@ pub async fn diff(
             _ => None,
         })
         .collect();
-    let status_ok = |c: &Change| statuses.is_empty() || statuses.contains(&c.status);
+    let hide_text = DiffQuery::has(&query.text, "hide");
+    let status_ok = |c: &Change| {
+        (statuses.is_empty() || statuses.contains(&c.status)) && !(hide_text && c.is_text_only())
+    };
 
     // Counts for each chip, given the *other* active filters.
     let cat_count = |cat: Category| {
@@ -192,8 +207,15 @@ pub async fn diff(
         cs.changes
             .iter()
             .filter(|c| filter.matches(&c.facets) && c.status == s)
+            .filter(|c| !(hide_text && c.is_text_only()))
             .count()
     };
+    let text_only_count = cs
+        .changes
+        .iter()
+        .filter(|c| filter.matches(&c.facets) && c.is_text_only())
+        .filter(|c| statuses.is_empty() || statuses.contains(&c.status))
+        .count();
     let shown: Vec<&Change> = cs
         .changes
         .iter()
@@ -206,6 +228,7 @@ pub async fn diff(
             "cat" => DiffQuery::has(&query.cat, value),
             "job" => DiffQuery::has(&query.job, value),
             "change" => DiffQuery::has(&query.change, value),
+            "text" => hide_text,
             _ => include_raw,
         };
         html! {
@@ -225,7 +248,7 @@ pub async fn diff(
             form.filters method="get" action="/diff" {
                 (version_select("from", "From", &site.versions, Some(&from)))
                 (version_select("to", "To", &site.versions, Some(&to)))
-                @for (k, v) in [("cat", &query.cat), ("job", &query.job), ("change", &query.change), ("raw", &query.raw)] {
+                @for (k, v) in [("cat", &query.cat), ("job", &query.job), ("change", &query.change), ("raw", &query.raw), ("text", &query.text)] {
                     @if !v.is_empty() { input type="hidden" name=(k) value=(v); }
                 }
                 button.primary type="submit" { "Compare" }
@@ -253,6 +276,10 @@ pub async fn diff(
                     (chip("change", "modified", "Changed", status_count(Status::Modified)))
                 }
                 div.facet-row {
+                    span.facet-label { "Text" }
+                    (chip("text", "hide", "Hide text-only changes", text_only_count))
+                }
+                div.facet-row {
                     span.facet-label { "Raw" }
                     (chip("raw", "1", "Include file and .img changes", raw_count))
                     @if !query.cat.is_empty() || !query.job.is_empty() || !query.change.is_empty() {
@@ -268,15 +295,23 @@ pub async fn diff(
             }
             @for cat in Category::ALL {
                 @let in_cat: Vec<&&Change> = shown.iter().filter(|c| c.facets.category == cat).collect();
+                @let limit = if query.all == cat.slug() || DiffQuery::list(&query.cat).len() == 1 {
+                    usize::MAX
+                } else {
+                    DIFF_LIMIT_PER_CATEGORY
+                };
                 @if !in_cat.is_empty() {
-                    section {
+                    section id={ "cat-" (cat.slug()) } {
                         h2 { (cat.name()) " " span.muted { "(" (in_cat.len()) ")" } }
                         ul.records {
-                            @for c in in_cat.iter().take(DIFF_LIMIT_PER_CATEGORY) { (change_card(&site, c, &from, &to)) }
+                            @for c in in_cat.iter().take(limit) { (change_card(&site, c, &from, &to)) }
                         }
-                        @if in_cat.len() > DIFF_LIMIT_PER_CATEGORY {
-                            p.muted { (in_cat.len() - DIFF_LIMIT_PER_CATEGORY) " more not shown. Narrow the filters or use "
-                                code { "datamine diff --category " (cat.slug()) " --limit 0" } "." }
+                        @if in_cat.len() > limit {
+                            p {
+                                a.button href={ (DiffQuery { all: cat.slug().into(), ..query.clone() }.url()) "#cat-" (cat.slug()) } {
+                                    "Show all " (in_cat.len()) " " (cat.name().to_lowercase())
+                                }
+                            }
                         }
                     }
                 }
@@ -516,28 +551,109 @@ fn record_link(site: &Site, kind: &str, key: &str) -> Markup {
     html! { a.key.break href=(href) { (key) } }
 }
 
-/// `levels/12/damage` -> `Lv 12 · damage`.
-fn pretty_path(path: &str) -> String {
-    match path.strip_prefix("levels/").and_then(|r| r.split_once('/')) {
-        Some((lv, field)) => format!("Lv {lv} · {field}"),
-        None => path.to_owned(),
+/// Fields grouped for display: per-level changes to the same field
+/// (`levels/1/text`, `levels/2/text`, ...) become one group.
+enum FieldGroup<'a> {
+    Single(&'a FieldChange),
+    Levels {
+        field: &'a str,
+        changes: Vec<(u32, &'a FieldChange)>,
+    },
+}
+
+fn group_fields(fields: &[FieldChange]) -> Vec<FieldGroup<'_>> {
+    let mut out: Vec<FieldGroup> = Vec::new();
+    for f in fields {
+        let level_field = f
+            .path
+            .strip_prefix("levels/")
+            .and_then(|r| r.split_once('/'))
+            .and_then(|(lv, field)| Some((lv.parse::<u32>().ok()?, field)));
+        match level_field {
+            Some((lv, field)) => {
+                let existing = out.iter_mut().find_map(|g| match g {
+                    FieldGroup::Levels { field: f2, changes } if *f2 == field => Some(changes),
+                    _ => None,
+                });
+                match existing {
+                    Some(changes) => changes.push((lv, f)),
+                    None => out.push(FieldGroup::Levels {
+                        field,
+                        changes: vec![(lv, f)],
+                    }),
+                }
+            }
+            None => out.push(FieldGroup::Single(f)),
+        }
+    }
+    for g in &mut out {
+        if let FieldGroup::Levels { changes, .. } = g {
+            changes.sort_by_key(|(lv, _)| *lv);
+        }
+    }
+    out
+}
+
+fn field_row(label: &str, f: &FieldChange) -> Markup {
+    let cell = |v: &Option<Value>| v.as_ref().map(views::value_text);
+    html! {
+        tr {
+            td data-label="Field" { code { (label) } }
+            td.before data-label="Before" {
+                @if let Some(t) = cell(&f.old) { del { (t) } } @else { span.muted { "—" } }
+            }
+            td.after data-label="After" {
+                @if let Some(t) = cell(&f.new) { ins { (t) } } @else { span.muted { "—" } }
+            }
+        }
     }
 }
 
+/// Levels as compact ranges: `1–5, 8, 10–12`.
+fn level_ranges(levels: &[u32]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < levels.len() {
+        let start = levels[i];
+        while i + 1 < levels.len() && levels[i + 1] == levels[i] + 1 {
+            i += 1;
+        }
+        parts.push(if levels[i] == start {
+            start.to_string()
+        } else {
+            format!("{start}–{}", levels[i])
+        });
+        i += 1;
+    }
+    parts.join(", ")
+}
+
 fn field_table(fields: &[FieldChange]) -> Markup {
-    let cell = |v: &Option<Value>| v.as_ref().map(views::value_text);
     html! {
         table.fields {
             thead { tr { th { "Field" } th { "Before" } th { "After" } } }
             tbody {
-                @for f in fields {
-                    tr {
-                        td data-label="Field" { code { (pretty_path(&f.path)) } }
-                        td.before data-label="Before" {
-                            @if let Some(t) = cell(&f.old) { del { (t) } } @else { span.muted { "—" } }
+                @for g in group_fields(fields) {
+                    @match g {
+                        FieldGroup::Single(f) => (field_row(&f.path, f)),
+                        FieldGroup::Levels { field, changes } if changes.len() < 3 => {
+                            @for (lv, f) in &changes { (field_row(&format!("Lv {lv} · {field}"), f)) }
                         }
-                        td.after data-label="After" {
-                            @if let Some(t) = cell(&f.new) { ins { (t) } } @else { span.muted { "—" } }
+                        FieldGroup::Levels { field, changes } => {
+                            @let levels: Vec<u32> = changes.iter().map(|(lv, _)| *lv).collect();
+                            (field_row(&format!("Lv {} · {field} ({} levels)", level_ranges(&levels), changes.len()), changes[0].1))
+                            tr.group-detail {
+                                td colspan="3" {
+                                    details {
+                                        summary { "Show all " (changes.len()) " levels" }
+                                        table.fields {
+                                            tbody {
+                                                @for (lv, f) in &changes { (field_row(&format!("Lv {lv}"), f)) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -561,5 +677,16 @@ fn version_select(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_ranges_compact() {
+        assert_eq!(level_ranges(&[1, 2, 3, 5, 7, 8]), "1–3, 5, 7–8");
+        assert_eq!(level_ranges(&[4]), "4");
     }
 }

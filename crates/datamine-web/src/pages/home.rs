@@ -81,12 +81,7 @@ pub async fn home(
                 .count();
 
             // What changed since the version before this one.
-            let prev = site
-                .versions
-                .iter()
-                .take_while(|p| p.id != v.id)
-                .last()
-                .cloned();
+            let prev = ctx.store.previous(v)?;
             let changes = match prev {
                 Some(prev) => {
                     let mut cs = diff::changeset(ctx.store, &prev, v, &RecordFilter::default())?;

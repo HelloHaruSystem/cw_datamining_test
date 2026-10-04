@@ -98,6 +98,29 @@ impl Store {
         })
     }
 
+    /// The version released right before `version`, if any.
+    pub fn previous(&self, version: &Version) -> Result<Option<Version>> {
+        Ok(self
+            .db
+            .versions()?
+            .into_iter()
+            .take_while(|v| v.id != version.id)
+            .last())
+    }
+
+    /// Default "old side" for a diff ending at `to`: the baseline if it was
+    /// released before `to`, otherwise the version right before `to`.
+    pub fn diff_base(&self, to: &Version) -> Result<Option<Version>> {
+        let versions = self.db.versions()?;
+        let pos = |id| versions.iter().position(|v| v.id == id);
+        if let Some(b) = self.baseline()?
+            && pos(b.id) < pos(to.id)
+        {
+            return Ok(Some(b));
+        }
+        self.previous(to)
+    }
+
     /// Resolve a version selector:
     /// `latest`, `previous` (the one before latest), `baseline`, `#<id>`,
     /// or a label.
