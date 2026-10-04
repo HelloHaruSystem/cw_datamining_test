@@ -160,6 +160,38 @@ pub fn leaves(available: &[JobId]) -> Vec<JobId> {
         .collect()
 }
 
+/// Job advancements: `(level, slug, label)`. Level 0 is beginner.
+pub const ADVANCEMENTS: [(u8, &str, &str); 5] = [
+    (0, "beginner", "Beginner"),
+    (1, "1st", "1st job"),
+    (2, "2nd", "2nd job"),
+    (3, "3rd", "3rd job"),
+    (4, "4th", "4th job"),
+];
+
+/// Advancement of a job (0 = beginner, 1..=4).
+pub fn advancement(id: JobId) -> Option<u8> {
+    get(id).map(|j| j.advancement)
+}
+
+/// `"2nd job"` for advancement 2.
+pub fn advancement_label(advancement: u8) -> &'static str {
+    ADVANCEMENTS
+        .iter()
+        .find(|(a, _, _)| *a == advancement)
+        .map_or("Other", |(_, _, label)| label)
+}
+
+/// Parse `2nd`, `2`, `second` or `beginner`.
+pub fn parse_advancement(s: &str) -> Option<u8> {
+    let s = s.trim().to_ascii_lowercase();
+    let words = ["beginner", "first", "second", "third", "fourth"];
+    ADVANCEMENTS
+        .iter()
+        .find(|(a, slug, _)| s == *slug || s == a.to_string() || s == words[*a as usize])
+        .map(|(a, _, _)| *a)
+}
+
 /// Job by name (`crusader`, case-insensitive) or id (`111`).
 pub fn find(selector: &str) -> Option<JobId> {
     selector.parse().ok().or_else(|| {
@@ -188,6 +220,16 @@ mod tests {
         assert_eq!(path(0), [0]);
         assert_eq!(of_skill(1101006), 110);
         assert_eq!(of_skill(1000), 0);
+    }
+
+    #[test]
+    fn advancements() {
+        assert_eq!(advancement(111), Some(3));
+        assert_eq!(parse_advancement("2nd"), Some(2));
+        assert_eq!(parse_advancement("Third"), Some(3));
+        assert_eq!(parse_advancement("0"), Some(0));
+        assert_eq!(parse_advancement("5th"), None);
+        assert_eq!(advancement_label(1), "1st job");
     }
 
     #[test]

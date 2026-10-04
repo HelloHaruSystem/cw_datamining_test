@@ -13,7 +13,7 @@ datamine import <client-dir> --patchdata <patchdata-dir> --label <name>
 datamine versions
 datamine diff                          # baseline -> latest
 datamine diff --from previous --format markdown -o changes.md
-datamine diff --category skills --job warrior --data-only --hide-text
+datamine diff --category skills --job warrior --advancement 2nd --data-only --hide-text
 datamine skills --job fighter          # also: datamine jobs, datamine skill <id>
 datamine sp --job crusader --level 75 --build 1000000:16,1001003:20
 datamine history 1302000
@@ -41,6 +41,7 @@ Opens on the newest version (switch versions in the header). Pages:
 - **Skills**: every job, skill details with per-level stats and history
 - **Skill builder**: SP planning per job and level, with shareable links
 - **Patch diff**: changes between versions, filterable by category, job,
+  advancement (1st/2nd/3rd job),
   added/removed/changed, and hiding text-only rewording
 - **Search**, **Raw data** (full WZ tree with images) and **Versions**
 

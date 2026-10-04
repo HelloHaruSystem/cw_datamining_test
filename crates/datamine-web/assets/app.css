@@ -339,7 +339,7 @@ a.chip.filter.is-empty { opacity: 0.55; }
 
 .facets { display: grid; gap: 10px; margin-bottom: 16px; }
 .facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.facet-label { width: 74px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.facet-label { width: 104px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 @media (max-width: 639px) { .facet-label { width: 100%; } }
 
 /* ---- icons --------------------------------------------------------------- */

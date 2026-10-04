@@ -21,14 +21,7 @@ fn job_icon(job: JobId) -> String {
 }
 
 fn adv_label(job: JobId) -> &'static str {
-    match jobs::get(job).map(|j| j.advancement) {
-        Some(0) => "Beginner",
-        Some(1) => "1st job",
-        Some(2) => "2nd job",
-        Some(3) => "3rd job",
-        Some(_) => "4th job",
-        None => "Other",
-    }
+    jobs::advancement(job).map_or("Other", jobs::advancement_label)
 }
 
 // ---- /skills --------------------------------------------------------------

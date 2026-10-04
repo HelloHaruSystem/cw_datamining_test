@@ -100,6 +100,10 @@ pub enum Command {
         /// (fighter) or id (110).
         #[arg(long)]
         job: Vec<String>,
+        /// Only these job advancements (repeatable): beginner, 1st, 2nd,
+        /// 3rd, 4th. Combines with --job, e.g. --job warrior --advancement 2nd.
+        #[arg(long)]
+        advancement: Vec<String>,
         /// Hide raw file and .img changes.
         #[arg(long)]
         data_only: bool,
