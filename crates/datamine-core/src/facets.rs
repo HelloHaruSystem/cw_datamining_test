@@ -146,6 +146,8 @@ pub struct FacetFilter {
     /// Matches the job itself; see [`FacetFilter::branches`] for whole lines.
     pub jobs: Vec<JobId>,
     pub branches: Vec<Branch>,
+    /// Job advancements (0 = beginner, 1..=4), across all branches.
+    pub advancements: Vec<u8>,
     /// Hide raw file/`.img` records.
     pub data_only: bool,
 }
@@ -158,7 +160,20 @@ impl FacetFilter {
                 || f.job
                     .and_then(jobs::branch)
                     .is_some_and(|b| self.branches.contains(&b)))
+            && (self.advancements.is_empty()
+                || f.job
+                    .and_then(jobs::advancement)
+                    .is_some_and(|a| self.advancements.contains(&a)))
             && (!self.data_only || f.detail == Detail::Data)
+    }
+
+    /// Add an advancement selector: `beginner`, `1st`..`4th` or `0`..`4`.
+    pub fn add_advancement(&mut self, selector: &str) -> Result<(), String> {
+        let a = jobs::parse_advancement(selector).ok_or_else(|| {
+            format!("unknown advancement {selector:?}; use beginner, 1st, 2nd, 3rd or 4th")
+        })?;
+        self.advancements.push(a);
+        Ok(())
     }
 
     /// Add a job selector: a branch (`warrior`), a job name (`fighter`)
@@ -194,6 +209,7 @@ impl FacetFilter {
         self.categories.is_empty()
             && self.jobs.is_empty()
             && self.branches.is_empty()
+            && self.advancements.is_empty()
             && !self.data_only
     }
 }
@@ -220,6 +236,17 @@ mod tests {
             of("file", "Data/Mob/Mob_000.wz", None).category,
             Category::Monsters
         );
+    }
+
+    #[test]
+    fn filter_by_advancement_and_branch() {
+        let mut filter = FacetFilter::default();
+        filter.add_advancement("2nd").unwrap();
+        filter.add_job("warrior").unwrap();
+        assert!(filter.matches(&of("skill", "1101006", None))); // Fighter
+        assert!(!filter.matches(&of("skill", "1001003", None))); // Warrior, 1st
+        assert!(!filter.matches(&of("skill", "2101001", None))); // F/P Wizard
+        assert!(filter.add_advancement("5th").is_err());
     }
 
     #[test]

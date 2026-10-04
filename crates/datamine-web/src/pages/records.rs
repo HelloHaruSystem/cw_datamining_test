@@ -34,6 +34,9 @@ pub struct DiffQuery {
     cat: String,
     #[serde(default)]
     job: String,
+    /// Job advancements: beginner, 1st, 2nd, 3rd, 4th.
+    #[serde(default)]
+    adv: String,
     #[serde(default)]
     change: String,
     /// "1" to include raw file/.img changes.
@@ -65,6 +68,7 @@ impl DiffQuery {
         let target = match field {
             "cat" => &mut q.cat,
             "job" => &mut q.job,
+            "adv" => &mut q.adv,
             "change" => &mut q.change,
             "text" => &mut q.text,
             _ => &mut q.raw,
@@ -86,6 +90,7 @@ impl DiffQuery {
             ("to", self.to.as_deref().unwrap_or_default()),
             ("cat", &self.cat),
             ("job", &self.job),
+            ("adv", &self.adv),
             ("change", &self.change),
             ("raw", &self.raw),
             ("text", &self.text),
@@ -167,6 +172,9 @@ pub async fn diff(
     for j in DiffQuery::list(&query.job) {
         let _ = filter.add_job(j);
     }
+    for a in DiffQuery::list(&query.adv) {
+        let _ = filter.add_advancement(a);
+    }
     let statuses: Vec<Status> = DiffQuery::list(&query.change)
         .into_iter()
         .filter_map(|s| match s {
@@ -203,6 +211,16 @@ pub async fn diff(
             .filter(|c| f.matches(&c.facets) && status_ok(c))
             .count()
     };
+    let adv_count = |adv: u8| {
+        let f = FacetFilter {
+            advancements: vec![adv],
+            ..filter.clone()
+        };
+        cs.changes
+            .iter()
+            .filter(|c| f.matches(&c.facets) && status_ok(c))
+            .count()
+    };
     let status_count = |s: Status| {
         cs.changes
             .iter()
@@ -227,6 +245,7 @@ pub async fn diff(
         let active = match field {
             "cat" => DiffQuery::has(&query.cat, value),
             "job" => DiffQuery::has(&query.job, value),
+            "adv" => DiffQuery::has(&query.adv, value),
             "change" => DiffQuery::has(&query.change, value),
             "text" => hide_text,
             _ => include_raw,
@@ -248,7 +267,7 @@ pub async fn diff(
             form.filters method="get" action="/diff" {
                 (version_select("from", "From", &site.versions, Some(&from)))
                 (version_select("to", "To", &site.versions, Some(&to)))
-                @for (k, v) in [("cat", &query.cat), ("job", &query.job), ("change", &query.change), ("raw", &query.raw), ("text", &query.text)] {
+                @for (k, v) in [("cat", &query.cat), ("job", &query.job), ("adv", &query.adv), ("change", &query.change), ("raw", &query.raw), ("text", &query.text)] {
                     @if !v.is_empty() { input type="hidden" name=(k) value=(v); }
                 }
                 button.primary type="submit" { "Compare" }
@@ -270,6 +289,13 @@ pub async fn diff(
                     }
                 }
                 div.facet-row {
+                    span.facet-label { "Advancement" }
+                    @for (a, slug, label) in jobs::ADVANCEMENTS {
+                        @let n = adv_count(a);
+                        @if n > 0 || DiffQuery::has(&query.adv, slug) { (chip("adv", slug, label, n)) }
+                    }
+                }
+                div.facet-row {
                     span.facet-label { "Change" }
                     (chip("change", "added", "Added", status_count(Status::Added)))
                     (chip("change", "removed", "Removed", status_count(Status::Removed)))
@@ -282,8 +308,8 @@ pub async fn diff(
                 div.facet-row {
                     span.facet-label { "Raw" }
                     (chip("raw", "1", "Include file and .img changes", raw_count))
-                    @if !query.cat.is_empty() || !query.job.is_empty() || !query.change.is_empty() {
-                        a.small href=(DiffQuery { cat: String::new(), job: String::new(), change: String::new(), ..query.clone() }.url()) { "Clear filters" }
+                    @if !query.cat.is_empty() || !query.job.is_empty() || !query.adv.is_empty() || !query.change.is_empty() {
+                        a.small href=(DiffQuery { cat: String::new(), job: String::new(), adv: String::new(), change: String::new(), ..query.clone() }.url()) { "Clear filters" }
                     }
                 }
             }

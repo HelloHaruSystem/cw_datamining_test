@@ -127,6 +127,7 @@ pub fn run(cli: Cli) -> Result<()> {
             kind,
             category,
             job,
+            advancement,
             data_only,
             hide_text,
             format,
@@ -142,6 +143,9 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             for j in &job {
                 facets.add_job(j).map_err(anyhow::Error::msg)?;
+            }
+            for a in &advancement {
+                facets.add_advancement(a).map_err(anyhow::Error::msg)?;
             }
             let to = store.resolve(&to)?;
             let from = match &from {
@@ -244,7 +248,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     j.id,
                     j.name,
                     j.branch.name(),
-                    adv_name(j.advancement)
+                    jobs::advancement_label(j.advancement)
                 );
             }
         }
@@ -333,14 +337,4 @@ fn emit(out: Option<&std::path::Path>, text: &str) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn adv_name(advancement: u8) -> &'static str {
-    match advancement {
-        0 => "beginner",
-        1 => "1st job",
-        2 => "2nd job",
-        3 => "3rd job",
-        _ => "4th job",
-    }
 }
