@@ -138,6 +138,13 @@ pub enum Command {
         depth: usize,
     },
 
+    /// Start the web viewer.
+    Serve {
+        /// Address to listen on. Use 0.0.0.0:<port> to expose it on the network.
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        addr: std::net::SocketAddr,
+    },
+
     /// Save a canvas node as PNG.
     ExportImage {
         version: String,

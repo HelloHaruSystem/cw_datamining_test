@@ -207,6 +207,31 @@ fn float(f: f64) -> Value {
     Number::from_f64(f).map_or(Value::Null, Value::Number)
 }
 
+/// Child values that name an entry, in order of preference.
+const NAME_KEYS: &[&str] = &["name", "mapName", "streetName", "bookName"];
+
+/// Human-readable name of an entry, e.g. `"Sword"` for
+/// `String/Eqp.img/.../1302000`, taken from its `name`-like child.
+pub fn display_name(node: &WzNodeArc) -> Option<String> {
+    let read = node.read().expect("poisoned lock");
+    NAME_KEYS.iter().find_map(|key| {
+        let child = read.children.get(*key)?;
+        match &child.read().expect("poisoned lock").object_type {
+            WzObjectType::Value(WzValue::String(s)) => s.get_string().ok(),
+            WzObjectType::Value(WzValue::ParsedString(s)) => Some(s.clone()),
+            _ => None,
+        }
+    })
+}
+
+/// Order node names so `2` sorts before `10`, as WZ ids should.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    match (a.parse::<u64>(), b.parse::<u64>()) {
+        (Ok(x), Ok(y)) => x.cmp(&y).then_with(|| a.cmp(b)),
+        _ => a.cmp(b),
+    }
+}
+
 /// Short type name for listings.
 pub fn type_name(node: &WzNodeArc) -> &'static str {
     let read = node.read().expect("poisoned lock");

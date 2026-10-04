@@ -28,6 +28,17 @@ pub fn registry() -> Vec<Box<dyn Extractor>> {
     vec![Box::new(strings::Strings), Box::new(images::ImageHashes)]
 }
 
+/// The WZ node a record was extracted from, for linking a record to the
+/// tree browser. `None` for records without a node (e.g. files).
+pub fn wz_path(kind: &str, key: &str) -> Option<String> {
+    match kind {
+        "img" => Some(key.to_owned()),
+        k => k
+            .strip_prefix("string/")
+            .map(|img| format!("String/{img}.img/{key}")),
+    }
+}
+
 #[derive(Debug)]
 pub struct ExtractSummary {
     pub extractor: &'static str,

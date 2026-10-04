@@ -13,6 +13,9 @@ use crate::cli::{Cli, Command, Format};
 use crate::render;
 
 pub fn run(cli: Cli) -> Result<()> {
+    if let Command::Serve { addr } = cli.command {
+        return datamine_web::serve(&cli.store, addr);
+    }
     let mut store = Store::open(&cli.store)?;
     match cli.command {
         Command::Import {
@@ -177,12 +180,12 @@ pub fn run(cli: Cli) -> Result<()> {
             let tree = WzTree::open(&store.snapshot_dir(&v))?;
             let node = tree.get(&path)?;
             let mut children = wz::children(&node);
-            children.sort_by(|a, b| render::natural_cmp(&a.0, &b.0));
+            children.sort_by(|a, b| wz::natural_cmp(&a.0, &b.0));
             for (name, child) in children {
                 let preview = if wz::is_value(&child) {
                     render::preview(&wz::node_to_json(&child, JsonOptions::default()), 80)
                 } else {
-                    String::new()
+                    wz::display_name(&child).unwrap_or_default()
                 };
                 println!("{:<8} {name}  {preview}", wz::type_name(&child));
             }
@@ -206,6 +209,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 serde_json::to_string_pretty(&wz::node_to_json(&node, opts))?
             );
         }
+
+        Command::Serve { .. } => unreachable!("handled above"),
 
         Command::ExportImage { version, path, out } => {
             let v = store.resolve(&version)?;

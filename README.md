@@ -26,11 +26,23 @@ Run `datamine --help` for everything else.
 `import` copies the client into `store/` first. Nothing ever reads or parses
 the original install.
 
+## Web viewer
+
+```sh
+datamine serve                     # http://127.0.0.1:8080
+datamine serve --addr 0.0.0.0:8080 # reachable from other machines
+```
+
+Browse versions, the full data tree with images, search, diffs and history.
+It works on phones and desktops, in light or dark mode, and needs no
+JavaScript (JS only adds the theme switch). Every page has a CLI equivalent.
+
 ## Layout
 
 ```text
 crates/datamine-core   all logic (import, db, wz parsing, extractors, diff)
 crates/datamine-cli    argument parsing and output only
+crates/datamine-web    web viewer (axum + maud), rendering only
 store/                 datamine.db + deduplicated snapshots (git-ignored)
 ```
 

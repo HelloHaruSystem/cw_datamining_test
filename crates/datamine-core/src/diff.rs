@@ -46,6 +46,18 @@ pub struct Changeset {
 }
 
 impl Changeset {
+    /// Changes grouped by kind, in kind order.
+    pub fn by_kind(&self) -> Vec<(&str, Vec<&Change>)> {
+        let mut out: Vec<(&str, Vec<&Change>)> = Vec::new();
+        for c in &self.changes {
+            match out.last_mut() {
+                Some((k, list)) if *k == c.kind => list.push(c),
+                _ => out.push((&c.kind, vec![c])),
+            }
+        }
+        out
+    }
+
     /// `(kind, added, removed, modified)` counts, sorted by kind.
     pub fn summary(&self) -> Vec<(String, usize, usize, usize)> {
         let mut counts: BTreeMap<&str, [usize; 3]> = BTreeMap::new();
