@@ -9,6 +9,7 @@ use datamine_core::diff::{Changeset, RecordHistory, Status};
 use datamine_core::extract::ExtractSummary;
 use datamine_core::jobs::{self, JobId};
 use datamine_core::sp::Evaluation;
+use datamine_core::textdiff;
 use serde_json::Value;
 
 pub fn versions(versions: &[Version], baseline: Option<VersionId>) {
@@ -107,13 +108,7 @@ pub fn changeset_text(cs: &Changeset, limit: usize) -> String {
                 Status::Modified => {
                     out.push('\n');
                     for f in &c.fields {
-                        let _ = writeln!(
-                            out,
-                            "    {}: {} -> {}",
-                            f.path,
-                            opt_preview(&f.old, 60),
-                            opt_preview(&f.new, 60)
-                        );
+                        let _ = writeln!(out, "    {}: {}", f.path, field_text(&f.old, &f.new));
                     }
                 }
             }
@@ -287,6 +282,31 @@ pub fn bytes(n: u64) -> String {
         unit += 1;
     }
     format!("{v:.1} {}", UNITS[unit])
+}
+
+/// `old -> new`, or for edited text a word diff around the first change:
+/// `…from items [-and skills -]is boosted.`
+fn field_text(old: &Option<Value>, new: &Option<Value>) -> String {
+    if let (Some(Value::String(a)), Some(Value::String(b))) = (old, new) {
+        let segments = textdiff::diff_words(a, b);
+        if textdiff::similarity(&segments) >= 0.3 {
+            let inline = textdiff::inline(a, b);
+            let first = inline
+                .find("[-")
+                .into_iter()
+                .chain(inline.find("{+"))
+                .min()
+                .unwrap_or(0);
+            let start = inline[..first]
+                .char_indices()
+                .rev()
+                .nth(40)
+                .map_or(0, |(i, _)| i);
+            let prefix = if start > 0 { "…" } else { "" };
+            return format!("{prefix}{}", truncate(&inline[start..], 140));
+        }
+    }
+    format!("{} -> {}", opt_preview(old, 60), opt_preview(new, 60))
 }
 
 fn limit_or_all(limit: usize) -> usize {

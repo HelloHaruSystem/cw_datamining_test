@@ -8,6 +8,7 @@ use datamine_core::diff::{self, Change, FieldChange, Status};
 use datamine_core::extract;
 use datamine_core::facets::{Category, Detail, FacetFilter};
 use datamine_core::jobs::{self, Branch};
+use datamine_core::textdiff;
 use maud::{Markup, html};
 use serde::Deserialize;
 use serde_json::Value;
@@ -622,14 +623,44 @@ fn group_fields(fields: &[FieldChange]) -> Vec<FieldGroup<'_>> {
 
 fn field_row(label: &str, f: &FieldChange) -> Markup {
     let cell = |v: &Option<Value>| v.as_ref().map(views::value_text);
+    // Edited text: mark only the changed words. Rewrites (little in
+    // common) read better struck out and highlighted as a whole.
+    let words = match (&f.old, &f.new) {
+        (Some(Value::String(a)), Some(Value::String(b))) => {
+            let segments = textdiff::diff_words(a, b);
+            (textdiff::similarity(&segments) >= 0.3).then_some(segments)
+        }
+        _ => None,
+    };
     html! {
         tr {
             td data-label="Field" { code { (label) } }
-            td.before data-label="Before" {
-                @if let Some(t) = cell(&f.old) { del { (t) } } @else { span.muted { "—" } }
-            }
-            td.after data-label="After" {
-                @if let Some(t) = cell(&f.new) { ins { (t) } } @else { span.muted { "—" } }
+            @if let Some(segments) = &words {
+                td.before data-label="Before" {
+                    @for s in segments {
+                        @match s.op {
+                            textdiff::Op::Same => (s.text),
+                            textdiff::Op::Removed => del { (s.text) },
+                            textdiff::Op::Added => {},
+                        }
+                    }
+                }
+                td.after data-label="After" {
+                    @for s in segments {
+                        @match s.op {
+                            textdiff::Op::Same => (s.text),
+                            textdiff::Op::Added => ins { (s.text) },
+                            textdiff::Op::Removed => {},
+                        }
+                    }
+                }
+            } @else {
+                td.before data-label="Before" {
+                    @if let Some(t) = cell(&f.old) { del { (t) } } @else { span.muted { "—" } }
+                }
+                td.after data-label="After" {
+                    @if let Some(t) = cell(&f.new) { ins { (t) } } @else { span.muted { "—" } }
+                }
             }
         }
     }
