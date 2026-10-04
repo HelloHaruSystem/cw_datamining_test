@@ -3,9 +3,12 @@
 
 use std::fmt::Write;
 
+use datamine_core::catalog::Skill;
 use datamine_core::db::{Extraction, StoredRecord, Version, VersionId};
 use datamine_core::diff::{Changeset, RecordHistory, Status};
 use datamine_core::extract::ExtractSummary;
+use datamine_core::jobs::{self, JobId};
+use datamine_core::sp::Evaluation;
 use serde_json::Value;
 
 pub fn versions(versions: &[Version], baseline: Option<VersionId>) {
@@ -185,6 +188,73 @@ pub fn history_text(hist: &[RecordHistory]) -> String {
                     );
                 }
             }
+        }
+    }
+    out
+}
+
+pub fn skill(s: &Skill) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{} ({})  {}  max level {}",
+        s.label(),
+        s.id,
+        jobs::name(s.job),
+        s.max_level
+    );
+    if !s.req.is_empty() {
+        let req: Vec<_> = s
+            .req
+            .iter()
+            .map(|(id, lv)| format!("{id} at level {lv}"))
+            .collect();
+        let _ = writeln!(out, "requires {}", req.join(", "));
+    }
+    if s.invisible {
+        out.push_str("hidden skill\n");
+    }
+    if let Some(d) = &s.desc {
+        let _ = writeln!(out, "\n{}", d.replace("\\n", "\n"));
+    }
+    out.push('\n');
+    for (lv, stats) in &s.levels {
+        let text = stats
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let nums: Vec<_> = stats
+            .iter()
+            .filter(|(k, _)| *k != "text")
+            .map(|(k, v)| format!("{k}={}", preview(v, 20)))
+            .collect();
+        let _ = writeln!(out, "{lv:>3}  {text}");
+        if !nums.is_empty() {
+            let _ = writeln!(out, "     {}", nums.join(" "));
+        }
+    }
+    out
+}
+
+pub fn sp(eval: &Evaluation, target: JobId, level: u32) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "{} at level {level}", jobs::name(target));
+    for p in &eval.pools {
+        let _ = writeln!(
+            out,
+            "  {:<26} {:>3} / {:>3} SP  ({} left)",
+            p.job_name,
+            p.spent,
+            p.total,
+            p.total as i64 - p.spent as i64
+        );
+    }
+    if eval.problems.is_empty() {
+        out.push_str("build is valid\n");
+    } else {
+        out.push_str("problems:\n");
+        for p in &eval.problems {
+            let _ = writeln!(out, "  - {p}");
         }
     }
     out

@@ -5,13 +5,14 @@ use std::io::Cursor;
 
 use axum::extract::{Path, Query, State};
 use axum::http::header;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Redirect, Response};
 use datamine_core::wz::{self, JsonOptions};
-use maud::{Markup, html};
+use maud::html;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::AppError;
+use crate::site::Site;
 use crate::state::AppState;
 use crate::views::{self, Nav, badge, encode_path};
 
@@ -21,6 +22,8 @@ const PAGE_SIZE: usize = 200;
 pub struct PageQuery {
     #[serde(default)]
     page: usize,
+    /// Set by the header's version switcher: jump to the same path there.
+    v: Option<String>,
 }
 
 struct ChildRow {
@@ -31,6 +34,7 @@ struct ChildRow {
 }
 
 struct NodeView {
+    site: Site,
     label: String,
     kind: &'static str,
     value: Option<Value>,
@@ -42,7 +46,7 @@ pub async fn root(
     state: State<AppState>,
     Path(version): Path<String>,
     query: Query<PageQuery>,
-) -> Result<Markup, AppError> {
+) -> Result<Response, AppError> {
     node(state, Path((version, String::new())), query).await
 }
 
@@ -50,12 +54,18 @@ pub async fn node(
     State(state): State<AppState>,
     Path((version, path)): Path<(String, String)>,
     Query(q): Query<PageQuery>,
-) -> Result<Markup, AppError> {
+) -> Result<Response, AppError> {
     let path = path.trim_matches('/').to_owned();
+    if let Some(target) = q.v.as_deref().filter(|t| *t != version && !t.is_empty()) {
+        let to = format!("/v/{}/browse/{}", encode_path(target), encode_path(&path));
+        return Ok(Redirect::to(&to).into_response());
+    }
     let lookup = path.clone();
+    let here = format!("/v/{}/browse/{}", encode_path(&version), encode_path(&path));
     let view = state
         .run(move |ctx| {
-            let v = ctx.version(&version)?;
+            let site = Site::load(ctx, Some(&version), &here)?;
+            let v = site.version.clone();
             let tree = ctx.tree(&v)?;
             let node = tree.get(&lookup).map_err(AppError::NotFound)?;
 
@@ -85,6 +95,7 @@ pub async fn node(
                 .collect();
 
             Ok(NodeView {
+                site,
                 label: v.label,
                 kind: wz::type_name(&node),
                 value: wz::is_value(&node).then(|| wz::node_to_json(&node, JsonOptions::default())),
@@ -100,10 +111,7 @@ pub async fn node(
         .next()
         .filter(|s| !s.is_empty())
         .unwrap_or(&view.label);
-    let mut crumbs = vec![
-        ("Versions".to_owned(), "/".to_owned()),
-        (view.label.clone(), format!("{base}/browse")),
-    ];
+    let mut crumbs = vec![("Raw data".to_owned(), format!("{base}/browse"))];
     let mut acc = String::new();
     for seg in path.split('/').filter(|s| !s.is_empty()) {
         acc = if acc.is_empty() {
@@ -127,8 +135,9 @@ pub async fn node(
     let pages = view.total_children.div_ceil(PAGE_SIZE);
 
     Ok(views::page(
+        Some(&view.site),
         title,
-        Nav::Versions,
+        Nav::Raw,
         html! {
             (views::breadcrumbs(&crumbs))
             div.title-row {
@@ -185,7 +194,8 @@ pub async fn node(
                 p.empty { "This node is empty." }
             }
         },
-    ))
+    )
+    .into_response())
 }
 
 /// PNG of a canvas node. Snapshots never change, so cache aggressively.

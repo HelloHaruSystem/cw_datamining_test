@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::db::{RecordFilter, RecordPair, StoredRecord, Version};
+use crate::facets::{self, FacetFilter, Facets};
 use crate::store::Store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -23,6 +24,7 @@ pub struct Change {
     pub kind: String,
     pub key: String,
     pub status: Status,
+    pub facets: Facets,
     pub old: Option<Value>,
     pub new: Option<Value>,
     /// Per-field changes, when both sides have object payloads.
@@ -45,7 +47,22 @@ pub struct Changeset {
     pub changes: Vec<Change>,
 }
 
+impl Change {
+    /// Display name from the payload (`name`, `mapName`, ...), if any.
+    pub fn title(&self) -> Option<&str> {
+        let data = self.new.as_ref().or(self.old.as_ref())?;
+        ["name", "mapName", "streetName", "bookName"]
+            .iter()
+            .find_map(|k| data.get(k).and_then(Value::as_str))
+    }
+}
+
 impl Changeset {
+    /// Keep only changes matching `filter`.
+    pub fn retain(&mut self, filter: &FacetFilter) {
+        self.changes.retain(|c| filter.matches(&c.facets));
+    }
+
     /// Changes grouped by kind, in kind order.
     pub fn by_kind(&self) -> Vec<(&str, Vec<&Change>)> {
         let mut out: Vec<(&str, Vec<&Change>)> = Vec::new();
@@ -100,10 +117,12 @@ fn change_from_pair(p: RecordPair) -> Change {
         (Status::Modified, Some(old), Some(new)) => field_changes(old, new),
         _ => Vec::new(),
     };
+    let facets = facets::of(&p.kind, &p.key, p.new_data.as_ref().or(p.old_data.as_ref()));
     Change {
         kind: p.kind,
         key: p.key,
         status,
+        facets,
         old: p.old_data,
         new: p.new_data,
         fields,

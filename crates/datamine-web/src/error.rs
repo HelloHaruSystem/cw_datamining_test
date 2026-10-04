@@ -8,6 +8,8 @@ use crate::views;
 pub enum AppError {
     NotFound(anyhow::Error),
     BadRequest(String),
+    /// The store is empty; shown as a getting-started page.
+    NoVersions,
     Internal(anyhow::Error),
 }
 
@@ -22,6 +24,12 @@ impl IntoResponse for AppError {
         let (status, title, detail) = match &self {
             Self::NotFound(e) => (StatusCode::NOT_FOUND, "Not found", format!("{e:#}")),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "Bad request", msg.clone()),
+            Self::NoVersions => (
+                StatusCode::OK,
+                "No versions yet",
+                "Import a client with `datamine import <client> --label <name>` to get started."
+                    .to_owned(),
+            ),
             Self::Internal(e) => {
                 tracing::error!("{e:#}");
                 // Details go to the log only; they can contain server paths.
@@ -33,12 +41,15 @@ impl IntoResponse for AppError {
             }
         };
         let body = views::page(
+            None,
             title,
             views::Nav::None,
             html! {
-                h1 { (title) }
-                p.muted { (detail) }
-                p { a href="/" { "Back to versions" } }
+                div.empty {
+                    h1 { (title) }
+                    p.muted { (detail) }
+                    p { a.button href="/" { "Back to home" } }
+                }
             },
         );
         (status, body).into_response()

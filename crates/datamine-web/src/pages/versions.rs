@@ -1,17 +1,20 @@
-//! `/` (all versions) and `/v/{version}` (one version's details).
+//! `/versions` (all versions) and `/v/{version}` (one version's details).
 //! CLI equivalents: `datamine versions`, `datamine info <version>`.
 
 use axum::extract::{Path, State};
 use maud::{Markup, html};
 
 use crate::error::AppError;
+use crate::site::Site;
 use crate::state::AppState;
 use crate::views::{self, Nav, badge, encode_path, encode_query, short_time};
 
 pub async fn list(State(state): State<AppState>) -> Result<Markup, AppError> {
-    let (versions, baseline) = state
+    let (site, versions, baseline) = state
         .run(|ctx| {
+            let site = Site::load(ctx, None, "/versions").ok();
             Ok((
+                site,
                 ctx.store.db().versions()?,
                 ctx.store.baseline()?.map(|b| b.id),
             ))
@@ -19,6 +22,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Markup, AppError> {
         .await?;
 
     Ok(views::page(
+        site.as_ref(),
         "Versions",
         Nav::Versions,
         html! {
@@ -45,7 +49,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Markup, AppError> {
                                 td data-label="Build" { (v.build_time.as_deref().map(short_time).unwrap_or_else(|| "—".into())) }
                                 td data-label="Imported" { (short_time(&v.imported_at)) }
                                 td.actions {
-                                    a.button href={ "/v/" (encode_path(&v.label)) "/browse" } { "Browse" }
+                                    a.button href={ "/?v=" (encode_query(&v.label)) } { "Open" }
                                 }
                             }
                         }
@@ -60,22 +64,25 @@ pub async fn detail(
     State(state): State<AppState>,
     Path(selector): Path<String>,
 ) -> Result<Markup, AppError> {
-    let (v, is_baseline, extractions, kinds) = state
+    let path = format!("/v/{}", encode_path(&selector));
+    let (site, v, is_baseline, extractions, kinds) = state
         .run(move |ctx| {
-            let v = ctx.version(&selector)?;
+            let site = Site::load(ctx, Some(&selector), &path)?;
+            let v = site.version.clone();
             let is_baseline = ctx.store.baseline()?.is_some_and(|b| b.id == v.id);
             let extractions = ctx.store.db().extractions(v.id)?;
             let kinds = ctx.store.db().kind_counts(v.id)?;
-            Ok((v, is_baseline, extractions, kinds))
+            Ok((site, v, is_baseline, extractions, kinds))
         })
         .await?;
     let label = encode_path(&v.label);
 
     Ok(views::page(
+        Some(&site),
         &v.label,
         Nav::Versions,
         html! {
-            (views::breadcrumbs(&[("Versions".into(), "/".into()), (v.label.clone(), String::new())]))
+            (views::breadcrumbs(&[("Versions".into(), "/versions".into()), (v.label.clone(), String::new())]))
             div.title-row {
                 h1 { (v.label) }
                 @if is_baseline { (badge("baseline", "accent")) }

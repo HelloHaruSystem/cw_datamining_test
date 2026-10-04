@@ -342,6 +342,38 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// All records of one version matching `filter`, ordered by kind, key.
+    pub fn records(&self, version: VersionId, filter: &RecordFilter) -> Result<Vec<StoredRecord>> {
+        let (kind_eq, kind_like) = kind_params(filter);
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT r.version_id, r.kind, r.key, r.hash, b.data
+             FROM records r LEFT JOIN blobs b ON b.hash = r.blob_hash
+             WHERE r.version_id = ?3 AND {KIND_FILTER_R}
+             ORDER BY r.kind, r.key"
+        ))?;
+        let rows = stmt.query_map(params![kind_eq, kind_like, version], stored_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// One record by exact kind and key.
+    pub fn record(
+        &self,
+        version: VersionId,
+        kind: &str,
+        key: &str,
+    ) -> Result<Option<StoredRecord>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT r.version_id, r.kind, r.key, r.hash, b.data
+                 FROM records r LEFT JOIN blobs b ON b.hash = r.blob_hash
+                 WHERE r.version_id = ?1 AND r.kind = ?2 AND r.key = ?3",
+                params![version, kind, key],
+                stored_from_row,
+            )
+            .optional()?)
+    }
+
     /// Records of one version whose key or payload contains `text`
     /// (case-insensitive for ASCII).
     pub fn search(

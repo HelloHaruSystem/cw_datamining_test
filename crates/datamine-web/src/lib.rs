@@ -1,9 +1,12 @@
-//! Web viewer for a datamine store: versions, tree browser, search, diff
-//! and history. Every page has a CLI equivalent; this crate only renders
-//! what `datamine-core` provides.
+//! Web viewer for a datamine store: a game database (skills, ...), tools
+//! like the skill builder, patch diffs and a raw data browser. Every page
+//! has a CLI equivalent; this crate only renders what `datamine-core`
+//! provides.
 
+mod assets;
 mod error;
 mod pages;
+mod site;
 mod state;
 mod views;
 
@@ -12,18 +15,19 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use axum::Router;
-use axum::http::header;
 use axum::routing::get;
 
 use crate::state::AppState;
 
-const APP_CSS: &str = include_str!("../assets/app.css");
-const APP_JS: &str = include_str!("../assets/app.js");
-
 pub fn router(state: AppState) -> Router {
-    use pages::{browse, records, versions};
+    use pages::{browse, builder, home, records, skills, versions};
     Router::new()
-        .route("/", get(versions::list))
+        .route("/", get(home::home))
+        .route("/skills", get(skills::index))
+        .route("/skills/job/{job}", get(skills::job))
+        .route("/skills/{id}", get(skills::detail))
+        .route("/tools/skill-builder", get(builder::builder))
+        .route("/versions", get(versions::list))
         .route("/v/{version}", get(versions::detail))
         .route("/v/{version}/browse", get(browse::root))
         .route("/v/{version}/browse/{*path}", get(browse::node))
@@ -32,25 +36,8 @@ pub fn router(state: AppState) -> Router {
         .route("/search", get(records::search))
         .route("/diff", get(records::diff))
         .route("/history", get(records::history))
-        .route(
-            "/assets/app.css",
-            get(|| async { asset("text/css", APP_CSS) }),
-        )
-        .route(
-            "/assets/app.js",
-            get(|| async { asset("text/javascript", APP_JS) }),
-        )
+        .route("/assets/{name}", get(assets::serve))
         .with_state(state)
-}
-
-fn asset(content_type: &'static str, body: &'static str) -> impl axum::response::IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, content_type),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
-        ],
-        body,
-    )
 }
 
 /// Serve the store at `addr` until Ctrl-C.
