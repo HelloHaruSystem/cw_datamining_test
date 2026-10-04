@@ -1,11 +1,10 @@
 //! Human-readable output. Pure formatting: takes core types, returns or
 //! prints text.
 
-use std::cmp::Ordering;
 use std::fmt::Write;
 
 use datamine_core::db::{Extraction, StoredRecord, Version, VersionId};
-use datamine_core::diff::{Change, Changeset, RecordHistory, Status};
+use datamine_core::diff::{Changeset, RecordHistory, Status};
 use datamine_core::extract::ExtractSummary;
 use serde_json::Value;
 
@@ -86,7 +85,7 @@ pub fn changeset_text(cs: &Changeset, limit: usize) -> String {
     for (kind, a, r, m) in cs.summary() {
         let _ = writeln!(out, "{kind:<28} {a:>7} {r:>7} {m:>8}");
     }
-    for (kind, changes) in by_kind(&cs.changes) {
+    for (kind, changes) in cs.by_kind() {
         let _ = writeln!(out, "\n== {kind} ==");
         for c in changes.iter().take(limit_or_all(limit)) {
             let sigil = match c.status {
@@ -132,7 +131,7 @@ pub fn changeset_markdown(cs: &Changeset, limit: usize) -> String {
     for (kind, a, r, m) in cs.summary() {
         let _ = writeln!(out, "| `{kind}` | {a} | {r} | {m} |");
     }
-    for (kind, changes) in by_kind(&cs.changes) {
+    for (kind, changes) in cs.by_kind() {
         let _ = writeln!(out, "\n## `{kind}`\n");
         for c in changes.iter().take(limit_or_all(limit)) {
             match c.status {
@@ -218,25 +217,6 @@ pub fn bytes(n: u64) -> String {
         unit += 1;
     }
     format!("{v:.1} {}", UNITS[unit])
-}
-
-/// Order names so `2` sorts before `10`, as WZ ids should.
-pub fn natural_cmp(a: &str, b: &str) -> Ordering {
-    match (a.parse::<u64>(), b.parse::<u64>()) {
-        (Ok(x), Ok(y)) => x.cmp(&y),
-        _ => a.cmp(b),
-    }
-}
-
-fn by_kind(changes: &[Change]) -> Vec<(&str, Vec<&Change>)> {
-    let mut out: Vec<(&str, Vec<&Change>)> = Vec::new();
-    for c in changes {
-        match out.last_mut() {
-            Some((k, list)) if *k == c.kind => list.push(c),
-            _ => out.push((&c.kind, vec![c])),
-        }
-    }
-    out
 }
 
 fn limit_or_all(limit: usize) -> usize {
