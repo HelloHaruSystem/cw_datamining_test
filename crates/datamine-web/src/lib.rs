@@ -16,6 +16,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use axum::Router;
 use axum::routing::get;
+use tower_http::compression::CompressionLayer;
 
 use crate::state::AppState;
 
@@ -37,6 +38,8 @@ pub fn router(state: AppState) -> Router {
         .route("/diff", get(records::diff))
         .route("/history", get(records::history))
         .route("/assets/{name}", get(assets::serve))
+        // Pages are repetitive HTML; gzip/brotli shrink them ~10x.
+        .layer(CompressionLayer::new())
         .with_state(state)
 }
 

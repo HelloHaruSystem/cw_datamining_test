@@ -48,6 +48,18 @@ pub struct Changeset {
 }
 
 impl Change {
+    /// A modification where only wording changed (every changed field is
+    /// text on both sides), e.g. a reworded description.
+    pub fn is_text_only(&self) -> bool {
+        let is_text = |v: &Option<Value>| matches!(v, None | Some(Value::String(_)));
+        self.status == Status::Modified
+            && !self.fields.is_empty()
+            && self
+                .fields
+                .iter()
+                .all(|f| is_text(&f.old) && is_text(&f.new))
+    }
+
     /// Display name from the payload (`name`, `mapName`, ...), if any.
     pub fn title(&self) -> Option<&str> {
         let data = self.new.as_ref().or(self.old.as_ref())?;
@@ -58,6 +70,11 @@ impl Change {
 }
 
 impl Changeset {
+    /// Drop modifications where only wording changed.
+    pub fn hide_text_only(&mut self) {
+        self.changes.retain(|c| !c.is_text_only());
+    }
+
     /// Keep only changes matching `filter`.
     pub fn retain(&mut self, filter: &FacetFilter) {
         self.changes.retain(|c| filter.matches(&c.facets));
@@ -249,6 +266,22 @@ fn events(versions: &[Version], states: &BTreeMap<i64, StoredRecord>) -> Vec<His
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn text_only_changes() {
+        let change = |old: Value, new: Value| Change {
+            kind: "skill".into(),
+            key: "1".into(),
+            status: Status::Modified,
+            facets: crate::facets::of("skill", "1", None),
+            fields: field_changes(&old, &new),
+            old: Some(old),
+            new: Some(new),
+        };
+        assert!(change(json!({"desc": "a", "n": 1}), json!({"desc": "b", "n": 1})).is_text_only());
+        assert!(!change(json!({"desc": "a", "n": 1}), json!({"desc": "b", "n": 2})).is_text_only());
+        assert!(!change(json!({"n": 1}), json!({"n": "1"})).is_text_only());
+    }
 
     #[test]
     fn field_changes_reports_leaves() {

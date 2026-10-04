@@ -82,9 +82,10 @@ pub enum Command {
 
     /// Show what changed between two versions.
     Diff {
-        /// Old side; defaults to the baseline.
-        #[arg(long, default_value = "baseline")]
-        from: String,
+        /// Old side; defaults to the baseline, or the previous version
+        /// when the baseline isn't older than --to.
+        #[arg(long)]
+        from: Option<String>,
         /// New side.
         #[arg(long, default_value = "latest")]
         to: String,
@@ -102,6 +103,9 @@ pub enum Command {
         /// Hide raw file and .img changes.
         #[arg(long)]
         data_only: bool,
+        /// Hide changes where only text changed (rewording, typo fixes).
+        #[arg(long)]
+        hide_text: bool,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
         /// Write to a file instead of stdout.

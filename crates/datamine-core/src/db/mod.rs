@@ -129,11 +129,14 @@ impl Db {
             .context("version vanished right after insert")
     }
 
-    /// All versions in import order.
+    /// All versions in release order: by build time from the patch manifest,
+    /// falling back to import time, so an older build imported later still
+    /// sorts first. Both are RFC 3339 UTC strings, which sort correctly.
     pub fn versions(&self) -> Result<Vec<Version>> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("SELECT {VERSION_COLS} FROM versions ORDER BY id"))?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {VERSION_COLS} FROM versions
+             ORDER BY COALESCE(build_time, imported_at), id"
+        ))?;
         let rows = stmt.query_map([], version_from_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -300,18 +303,27 @@ impl Db {
         filter: &RecordFilter,
     ) -> Result<Vec<RecordPair>> {
         let (kind_eq, kind_like) = kind_params(filter);
+        // Two halves instead of a FULL OUTER JOIN over CTEs, which SQLite
+        // runs as a nested loop. Each half probes the other version through
+        // the (version_id, kind, key) primary key.
+        let a_filter = KIND_FILTER.replace("kind", "a.kind");
+        let b_filter = KIND_FILTER.replace("kind", "b.kind");
         let mut stmt = self.conn.prepare(&format!(
-            "WITH a AS (SELECT kind, key, hash, blob_hash FROM records
-                        WHERE version_id = ?1 AND {KIND_FILTER}),
-                  b AS (SELECT kind, key, hash, blob_hash FROM records
-                        WHERE version_id = ?2 AND {KIND_FILTER})
-             SELECT COALESCE(a.kind, b.kind), COALESCE(a.key, b.key),
-                    a.hash, b.hash, ba.data, bb.data
-             FROM a
-             FULL OUTER JOIN b ON a.kind = b.kind AND a.key = b.key
+            "SELECT a.kind, a.key, a.hash, b.hash, ba.data, bb.data
+             FROM records a
+             LEFT JOIN records b
+                    ON b.version_id = ?2 AND b.kind = a.kind AND b.key = a.key
              LEFT JOIN blobs ba ON ba.hash = a.blob_hash
              LEFT JOIN blobs bb ON bb.hash = b.blob_hash
-             WHERE a.hash IS DISTINCT FROM b.hash
+             WHERE a.version_id = ?1 AND {a_filter}
+               AND a.hash IS DISTINCT FROM b.hash
+             UNION ALL
+             SELECT b.kind, b.key, NULL, b.hash, NULL, bb.data
+             FROM records b
+             LEFT JOIN blobs bb ON bb.hash = b.blob_hash
+             WHERE b.version_id = ?2 AND {b_filter}
+               AND NOT EXISTS (SELECT 1 FROM records a
+                               WHERE a.version_id = ?1 AND a.kind = b.kind AND a.key = b.key)
              ORDER BY 1, 2"
         ))?;
         let rows = stmt.query_map(params![from, to, kind_eq, kind_like], |r| {
@@ -480,6 +492,31 @@ mod tests {
 
     fn rec(kind: &str, key: &str, name: &str) -> Record {
         Record::from_data(kind, key, json!({ "name": name }))
+    }
+
+    #[test]
+    fn versions_sort_by_build_time_not_import_order() {
+        let db = Db::open_in_memory().unwrap();
+        for (label, build) in [
+            ("newer", "2026-08-11T23:07:05+00:00"),
+            ("older", "2026-04-20T21:30:31+00:00"),
+        ] {
+            db.insert_version(&NewVersion {
+                label: label.into(),
+                channel: "test".into(),
+                source_path: "/src".into(),
+                build_time: Some(build.into()),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+        let labels: Vec<_> = db
+            .versions()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.label)
+            .collect();
+        assert_eq!(labels, ["older", "newer"]);
     }
 
     #[test]
