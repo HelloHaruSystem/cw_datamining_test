@@ -5,9 +5,11 @@ use std::io::Write;
 
 use anyhow::{Context, Result, bail};
 use datamine_core::db::RecordFilter;
+use datamine_core::facets::{self, FacetFilter};
 use datamine_core::import::{ImportOptions, import};
+use datamine_core::sp::{self, SpRules};
 use datamine_core::wz::{self, JsonOptions, WzTree};
-use datamine_core::{Store, diff, extract};
+use datamine_core::{Store, catalog, diff, extract, jobs};
 
 use crate::cli::{Cli, Command, Format};
 use crate::render;
@@ -123,10 +125,23 @@ pub fn run(cli: Cli) -> Result<()> {
             from,
             to,
             kind,
+            category,
+            job,
+            data_only,
             format,
             out,
             limit,
         } => {
+            let mut facets = FacetFilter {
+                data_only,
+                ..Default::default()
+            };
+            for c in &category {
+                facets.add_category(c).map_err(anyhow::Error::msg)?;
+            }
+            for j in &job {
+                facets.add_job(j).map_err(anyhow::Error::msg)?;
+            }
             let from = store.resolve(&from)?;
             let to = store.resolve(&to)?;
             if from.id == to.id {
@@ -138,7 +153,8 @@ pub fn run(cli: Cli) -> Result<()> {
             let filter = RecordFilter {
                 kind: kind.as_deref(),
             };
-            let cs = diff::changeset(&store, &from, &to, &filter)?;
+            let mut cs = diff::changeset(&store, &from, &to, &filter)?;
+            cs.retain(&facets);
             let text = match format {
                 Format::Text => render::changeset_text(&cs, limit),
                 Format::Markdown => render::changeset_markdown(&cs, limit),
@@ -212,6 +228,74 @@ pub fn run(cli: Cli) -> Result<()> {
 
         Command::Serve { .. } => unreachable!("handled above"),
 
+        Command::Jobs => {
+            for j in jobs::JOBS {
+                println!(
+                    "{:<5} {:<28} {:<9} {}",
+                    j.id,
+                    j.name,
+                    j.branch.name(),
+                    adv_name(j.advancement)
+                );
+            }
+        }
+
+        Command::Skills { job, version, all } => {
+            let v = store.resolve(&version)?;
+            let mut facets = FacetFilter::default();
+            if let Some(j) = &job {
+                facets.add_job(j).map_err(anyhow::Error::msg)?;
+            }
+            for s in catalog::skills(&store, v.id)? {
+                let f = facets::of("skill", &s.id, None);
+                if !facets.matches(&f) || !(all || s.is_learnable()) {
+                    continue;
+                }
+                let req: Vec<_> = s.req.iter().map(|(id, lv)| format!("{id}@{lv}")).collect();
+                println!(
+                    "{:<8} {:<22} {:<28} max {:>2}  {}",
+                    s.id,
+                    jobs::name(s.job),
+                    s.label(),
+                    s.max_level,
+                    if req.is_empty() {
+                        String::new()
+                    } else {
+                        format!("needs {}", req.join(", "))
+                    }
+                );
+            }
+        }
+
+        Command::Skill { id, version, json } => {
+            let v = store.resolve(&version)?;
+            let skill = catalog::skill(&store, v.id, &id)?
+                .with_context(|| format!("no skill {id} in {}", v.label))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&skill)?);
+            } else {
+                print!("{}", render::skill(&skill));
+            }
+        }
+
+        Command::Sp {
+            job,
+            level,
+            build,
+            version,
+        } => {
+            let target = jobs::find(&job).with_context(|| format!("unknown job {job:?}"))?;
+            let rules = SpRules::default();
+            let build = match &build {
+                Some(b) => sp::parse_build(b).map_err(anyhow::Error::msg)?,
+                None => Default::default(),
+            };
+            let v = store.resolve(&version)?;
+            let skills = catalog::skills(&store, v.id)?;
+            let eval = sp::evaluate(&rules, target, level, &build, &skills);
+            print!("{}", render::sp(&eval, target, level));
+        }
+
         Command::ExportImage { version, path, out } => {
             let v = store.resolve(&version)?;
             let tree = WzTree::open(&store.snapshot_dir(&v))?;
@@ -240,4 +324,14 @@ fn emit(out: Option<&std::path::Path>, text: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn adv_name(advancement: u8) -> &'static str {
+    match advancement {
+        0 => "beginner",
+        1 => "1st job",
+        2 => "2nd job",
+        3 => "3rd job",
+        _ => "4th job",
+    }
 }

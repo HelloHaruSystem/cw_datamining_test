@@ -91,6 +91,17 @@ pub enum Command {
         /// Only kinds matching this (prefix, e.g. `string` or `string/Eqp`).
         #[arg(long)]
         kind: Option<String>,
+        /// Only these categories (repeatable): skills, equipment, items,
+        /// monsters, npcs, maps, quests, other.
+        #[arg(long)]
+        category: Vec<String>,
+        /// Only these jobs (repeatable): branch (warrior), job name
+        /// (fighter) or id (110).
+        #[arg(long)]
+        job: Vec<String>,
+        /// Hide raw file and .img changes.
+        #[arg(long)]
+        data_only: bool,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
         /// Write to a file instead of stdout.
@@ -136,6 +147,44 @@ pub enum Command {
         /// Levels to expand (0 = unlimited).
         #[arg(long, default_value_t = 3)]
         depth: usize,
+    },
+
+    /// List jobs and their ids.
+    Jobs,
+
+    /// List skills, optionally for one job line.
+    Skills {
+        /// Branch (warrior), job name (fighter) or id (110).
+        #[arg(long)]
+        job: Option<String>,
+        #[arg(long, default_value = "latest")]
+        version: String,
+        /// Include hidden/internal skills.
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Show one skill with all levels.
+    Skill {
+        id: String,
+        #[arg(long, default_value = "latest")]
+        version: String,
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// SP pools for a job and level, and optionally check a build.
+    Sp {
+        /// Target job (name or id), e.g. crusader or 111.
+        #[arg(long)]
+        job: String,
+        #[arg(long)]
+        level: u32,
+        /// Skill levels as id:level,id:level (same format as builder links).
+        #[arg(long)]
+        build: Option<String>,
+        #[arg(long, default_value = "latest")]
+        version: String,
     },
 
     /// Start the web viewer.

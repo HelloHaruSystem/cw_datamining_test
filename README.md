@@ -13,6 +13,9 @@ datamine import <client-dir> --patchdata <patchdata-dir> --label <name>
 datamine versions
 datamine diff                          # baseline -> latest
 datamine diff --from previous --format markdown -o changes.md
+datamine diff --category skills --job warrior --data-only
+datamine skills --job fighter          # also: datamine jobs, datamine skill <id>
+datamine sp --job crusader --level 75 --build 1000000:16,1001003:20
 datamine history 1302000
 datamine search "Sword" --kind string/Eqp
 datamine ls latest String/Eqp.img
@@ -33,14 +36,22 @@ datamine serve                     # http://127.0.0.1:8080
 datamine serve --addr 0.0.0.0:8080 # reachable from other machines
 ```
 
-Browse versions, the full data tree with images, search, diffs and history.
-It works on phones and desktops, in light or dark mode, and needs no
-JavaScript (JS only adds the theme switch). Every page has a CLI equivalent.
+Opens on the newest version (switch versions in the header). Pages:
+
+- **Skills**: every job, skill details with per-level stats and history
+- **Skill builder**: SP planning per job and level, with shareable links
+- **Patch diff**: changes between versions, filterable by category, job and
+  added/removed/changed
+- **Search**, **Raw data** (full WZ tree with images) and **Versions**
+
+Works on phones and desktops, in light or dark mode. Everything except the
+skill builder works without JavaScript, and every page has a CLI equivalent.
 
 ## Layout
 
 ```text
-crates/datamine-core   all logic (import, db, wz parsing, extractors, diff)
+crates/datamine-core   all logic (import, db, wz parsing, extractors, diff,
+                       facets, jobs, SP rules)
 crates/datamine-cli    argument parsing and output only
 crates/datamine-web    web viewer (axum + maud), rendering only
 store/                 datamine.db + deduplicated snapshots (git-ignored)

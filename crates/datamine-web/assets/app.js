@@ -18,6 +18,7 @@
     } catch (e) {}
     document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
       btn.querySelector(".theme-label").textContent = names[theme];
+      btn.dataset.mode = theme;
       btn.setAttribute("aria-label", names[theme] + " (click to change)");
     });
   }
@@ -30,3 +31,9 @@
   });
   apply(current());
 })();
+
+// Selects marked data-autosubmit submit their form on change (the form
+// still has a plain submit button for no-JS visitors).
+document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
+  sel.addEventListener("change", function () { sel.form.submit(); });
+});

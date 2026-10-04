@@ -5,6 +5,7 @@
 //! again on a version atomically replaces what it produced before.
 
 mod images;
+pub mod skills;
 mod strings;
 
 use std::time::Instant;
@@ -25,7 +26,11 @@ pub trait Extractor: Sync {
 
 /// All extractors, in the order they run.
 pub fn registry() -> Vec<Box<dyn Extractor>> {
-    vec![Box::new(strings::Strings), Box::new(images::ImageHashes)]
+    vec![
+        Box::new(strings::Strings),
+        Box::new(skills::Skills),
+        Box::new(images::ImageHashes),
+    ]
 }
 
 /// The WZ node a record was extracted from, for linking a record to the
@@ -33,6 +38,10 @@ pub fn registry() -> Vec<Box<dyn Extractor>> {
 pub fn wz_path(kind: &str, key: &str) -> Option<String> {
     match kind {
         "img" => Some(key.to_owned()),
+        skills::KIND => {
+            let job = crate::jobs::of_skill(key.parse().ok()?);
+            Some(format!("Skill/{job:03}.img/skill/{key}"))
+        }
         k => k
             .strip_prefix("string/")
             .map(|img| format!("String/{img}.img/{key}")),
