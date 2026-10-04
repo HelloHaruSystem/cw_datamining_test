@@ -17,6 +17,7 @@ pub mod patchdata;
 pub mod record;
 pub mod sp;
 pub mod store;
+pub mod textdiff;
 pub mod wz;
 
 pub use store::Store;
