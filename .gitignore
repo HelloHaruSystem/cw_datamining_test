@@ -1,1 +1,6 @@
+# Game data: never commit client files or the datamine store.
 cw_test_2/
+store/
+
+# Build output
+target/
